@@ -557,7 +557,7 @@ function rateSummaryLine(){
   if (usdEurRate !== null){
     return `<div><div class="label">Cambio USD/EUR</div><b>${fmtNum(usdEurRate, 4)} <span style="font-weight:400;color:var(--text-dim);font-size:10px;">agg. ${rateUpdatedAt.toLocaleTimeString('it-IT')}</span></b></div>`;
   }
-  return `<div><div class="label">Cambio USD/EUR</div><b style="color:var(--text-dim);font-size:12.5px;">${rateFetchFailed ? 'non disponibile' : 'caricamento…'}</b></div>`;
+  return `<div><div class="label">Cambio USD/EUR</div><b style="color:var(--text-dim);font-size:12.5px;" title="Nessuna chiave richiesta: se resta così probabilmente qualcosa (estensione/firewall) blocca le API di cambio.">${rateFetchFailed ? 'non disponibile — riprovo tra poco' : 'caricamento…'}</b></div>`;
 }
 
 function renderPortfolioSummary(){
@@ -597,28 +597,56 @@ function togglePortfolioMode(){
   renderPortfolioSummary();
 }
 
-// ---------- USD → EUR live conversion (Frankfurter/ECB, no key required) ----------
+// ---------- USD → EUR live conversion ----------
+// No API key needed for any of these — all are free, keyless, CORS-open FX
+// sources. Several are listed so that if one is blocked (a browser
+// extension, ad-blocker, or network filter blocking an unfamiliar domain)
+// or temporarily down, the next one is tried automatically.
+
+const FX_PROVIDERS = [
+  {
+    url: 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json',
+    parse: (j) => j?.usd?.eur,
+  },
+  {
+    url: 'https://latest.currency-api.pages.dev/v1/currencies/usd.json',
+    parse: (j) => j?.usd?.eur,
+  },
+  {
+    url: 'https://api.frankfurter.app/latest?from=USD&to=EUR',
+    parse: (j) => j?.rates?.EUR,
+  },
+  {
+    url: 'https://open.er-api.com/v6/latest/USD',
+    parse: (j) => j?.rates?.EUR,
+  },
+];
 
 const RATE_REFRESH_MS = 5 * 60 * 1000; // FX moves slowly; no value in polling faster than this
 let rateFetchFailed = false;
 
 async function fetchExchangeRate(){
-  try{
-    const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR', { cache: 'no-store' });
-    if (!res.ok) throw new Error('rate ' + res.status);
-    const j = await res.json();
-    if (!j.rates || typeof j.rates.EUR !== 'number') throw new Error('no rate');
-    usdEurRate = j.rates.EUR;
-    rateUpdatedAt = new Date();
-    rateFetchFailed = false;
-  } catch(e){
-    if (usdEurRate === null) rateFetchFailed = true;
+  for (const provider of FX_PROVIDERS){
+    try{
+      const res = await fetch(provider.url, { cache: 'no-store' });
+      if (!res.ok) continue;
+      const j = await res.json();
+      const rate = provider.parse(j);
+      if (typeof rate === 'number' && rate > 0){
+        usdEurRate = rate;
+        rateUpdatedAt = new Date();
+        rateFetchFailed = false;
+        renderPortfolioSummary();
+        document.querySelectorAll('.card').forEach(card => {
+          const ticker = card.dataset.ticker;
+          if (ticker) renderPortfolioForCard(ticker, card);
+        });
+        return;
+      }
+    } catch(e){ /* try the next provider */ }
   }
+  if (usdEurRate === null) rateFetchFailed = true;
   renderPortfolioSummary();
-  document.querySelectorAll('.card').forEach(card => {
-    const ticker = card.dataset.ticker;
-    if (ticker) renderPortfolioForCard(ticker, card);
-  });
 }
 
 function startRatePolling(){
