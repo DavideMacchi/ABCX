@@ -23,6 +23,10 @@ P&L tracker. No backend, no build step — just static HTML/CSS/JS.
   live/polled price points.
 - **Portfolio mode** — enter quantity + average cost per ticker and see
   live position value and P&L, plus a totals bar for the active watchlist.
+  Every USD figure (per-card and in the totals bar) also shows its EUR
+  equivalent, converted at a live USD/EUR rate pulled from
+  [Frankfurter](https://frankfurter.dev/) (ECB reference rates, free, no
+  key) and refreshed every 5 minutes while portfolio mode is on.
 - **Theme toggle** — light/dark, persisted per device.
 - **CSV export** — export the currently visible (filtered/sorted) quotes,
   including portfolio figures, for the active watchlist.

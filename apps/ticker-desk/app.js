@@ -30,6 +30,9 @@ let portfolio = {};        // { TICKER: { qty: number, cost: number } }
 let portfolioMode = false;
 let sortMode = 'default';
 let filterText = '';
+let usdEurRate = null;     // EUR per 1 USD, refreshed live while portfolio mode is on
+let rateUpdatedAt = null;
+let rateTimer = null;
 
 const prevPrices = {};
 const lastQuoteMeta = {};  // { TICKER: { open, high, low, prevClose } }
@@ -61,6 +64,10 @@ function fmtNum(n, decimals=2){
 }
 function fmtTime(){
   return new Date().toLocaleTimeString('it-IT');
+}
+function fmtEur(n){
+  if (n === null || n === undefined || isNaN(n) || usdEurRate === null) return '';
+  return ' (€' + fmtNum(n * usdEurRate) + ')';
 }
 
 // ---------- watchlists ----------
@@ -541,9 +548,16 @@ function renderPortfolioForCard(ticker, card){
   const costBasis = entry.qty * entry.cost;
   const pl = value - costBasis;
   const plPct = costBasis ? (pl / costBasis) * 100 : 0;
-  resultEl.textContent = `Valore $${fmtNum(value)} · P/L ${pl >= 0 ? '▲' : '▼'} $${fmtNum(Math.abs(pl))} (${fmtNum(Math.abs(plPct))}%)`;
+  resultEl.textContent = `Valore $${fmtNum(value)}${fmtEur(value)} · P/L ${pl >= 0 ? '▲' : '▼'} $${fmtNum(Math.abs(pl))}${fmtEur(Math.abs(pl))} (${fmtNum(Math.abs(plPct))}%)`;
   resultEl.classList.remove('up','down');
   resultEl.classList.add(pl >= 0 ? 'up' : 'down');
+}
+
+function rateSummaryLine(){
+  if (usdEurRate !== null){
+    return `<div><div class="label">Cambio USD/EUR</div><b>${fmtNum(usdEurRate, 4)} <span style="font-weight:400;color:var(--text-dim);font-size:10px;">agg. ${rateUpdatedAt.toLocaleTimeString('it-IT')}</span></b></div>`;
+  }
+  return `<div><div class="label">Cambio USD/EUR</div><b style="color:var(--text-dim);font-size:12.5px;">${rateFetchFailed ? 'non disponibile' : 'caricamento…'}</b></div>`;
 }
 
 function renderPortfolioSummary(){
@@ -558,18 +572,18 @@ function renderPortfolioSummary(){
     totalCost += entry.qty * entry.cost;
     count++;
   }
+  el.hidden = false;
   if (count === 0){
-    el.hidden = false;
-    el.innerHTML = `<div><div class="label">Portfolio</div><b>Nessuna posizione in questa watchlist</b></div>`;
+    el.innerHTML = `<div><div class="label">Portfolio</div><b>Nessuna posizione in questa watchlist</b></div>${rateSummaryLine()}`;
     return;
   }
   const pl = totalValue - totalCost;
   const plPct = totalCost ? (pl / totalCost) * 100 : 0;
-  el.hidden = false;
   el.innerHTML = `
-    <div><div class="label">Valore totale</div><b>$${fmtNum(totalValue)}</b></div>
-    <div><div class="label">Costo totale</div><b>$${fmtNum(totalCost)}</b></div>
-    <div><div class="label">P/L</div><b style="color:${pl >= 0 ? 'var(--up)' : 'var(--down)'}">${pl >= 0 ? '▲' : '▼'} $${fmtNum(Math.abs(pl))} (${fmtNum(Math.abs(plPct))}%)</b></div>
+    <div><div class="label">Valore totale</div><b>$${fmtNum(totalValue)}${fmtEur(totalValue)}</b></div>
+    <div><div class="label">Costo totale</div><b>$${fmtNum(totalCost)}${fmtEur(totalCost)}</b></div>
+    <div><div class="label">P/L</div><b style="color:${pl >= 0 ? 'var(--up)' : 'var(--down)'}">${pl >= 0 ? '▲' : '▼'} $${fmtNum(Math.abs(pl))}${fmtEur(Math.abs(pl))} (${fmtNum(Math.abs(plPct))}%)</b></div>
+    ${rateSummaryLine()}
   `;
 }
 
@@ -578,7 +592,43 @@ function togglePortfolioMode(){
   saveJSON(STORAGE.portfolioMode, portfolioMode);
   document.getElementById('portfolioBtn').classList.toggle('active', portfolioMode);
   document.querySelectorAll('.portfolio-box').forEach(b => b.classList.toggle('show', portfolioMode));
+  if (portfolioMode) startRatePolling();
+  else stopRatePolling();
   renderPortfolioSummary();
+}
+
+// ---------- USD → EUR live conversion (Frankfurter/ECB, no key required) ----------
+
+const RATE_REFRESH_MS = 5 * 60 * 1000; // FX moves slowly; no value in polling faster than this
+let rateFetchFailed = false;
+
+async function fetchExchangeRate(){
+  try{
+    const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR', { cache: 'no-store' });
+    if (!res.ok) throw new Error('rate ' + res.status);
+    const j = await res.json();
+    if (!j.rates || typeof j.rates.EUR !== 'number') throw new Error('no rate');
+    usdEurRate = j.rates.EUR;
+    rateUpdatedAt = new Date();
+    rateFetchFailed = false;
+  } catch(e){
+    if (usdEurRate === null) rateFetchFailed = true;
+  }
+  renderPortfolioSummary();
+  document.querySelectorAll('.card').forEach(card => {
+    const ticker = card.dataset.ticker;
+    if (ticker) renderPortfolioForCard(ticker, card);
+  });
+}
+
+function startRatePolling(){
+  fetchExchangeRate();
+  if (rateTimer) clearInterval(rateTimer);
+  rateTimer = setInterval(fetchExchangeRate, RATE_REFRESH_MS);
+}
+function stopRatePolling(){
+  if (rateTimer) clearInterval(rateTimer);
+  rateTimer = null;
 }
 
 // ---------- CSV export ----------
@@ -728,6 +778,7 @@ function init(){
   renderGrid();
   recalcInterval();
   document.getElementById('portfolioBtn').classList.toggle('active', portfolioMode);
+  if (portfolioMode) startRatePolling();
 
   if (apiKey){
     hideApiKeyBox();
