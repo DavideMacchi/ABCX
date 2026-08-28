@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terminale Quotazioni</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="brand">TICKER<span>//</span>DESK</div>
+      <div class="subtitle">Quotazioni azionarie · aggiornamento automatico</div>
+    </div>
+    <div class="header-actions">
+      <div class="status" id="statusLine"><span class="dot"></span>Live</div>
+      <div class="btn-row">
+        <button class="refresh-btn" id="refreshBtn">Aggiorna tutto</button>
+        <button class="refresh-btn secondary" id="toggleAddBtn">+ Aggiungi titolo</button>
+        <button class="refresh-btn secondary" id="portfolioBtn">Modalità portfolio</button>
+        <button class="icon-btn" id="themeBtn" title="Cambia tema">🌙</button>
+      </div>
+      <button class="change-key-btn" id="changeKeyBtn">Cambia API key</button>
+    </div>
+  </header>
+
+  <div class="apikey-box" id="apikeyBox">
+    <div class="label">Chiave API richiesta</div>
+    <div class="hint">
+      Per dati affidabili uso <a href="https://finnhub.io/register" target="_blank" rel="noopener">Finnhub</a> (gratuita, CORS supportato).
+      Registrati e incolla qui la tua API key — resta salvata solo per te su questo dispositivo.
+    </div>
+    <div class="apikey-row">
+      <input type="text" id="apikeyInput" placeholder="Incolla qui la tua Finnhub API key" autocomplete="off" spellcheck="false">
+      <button id="apikeySave">Salva e avvia</button>
+    </div>
+  </div>
+
+  <div class="add-box" id="addBox">
+    <div class="label">Aggiungi titolo o fondo</div>
+    <div class="hint">
+      Cerca per <b>codice ISIN</b>, ticker o nome societario (es. <code>US0378331005</code> per Apple, <code>KULR</code>, "NVIDIA").
+      Copertura: azioni ed ETF USA affidabili sul piano gratuito Finnhub. Titoli e fondi di Borsa Italiana / Euronext Milan
+      spesso richiedono un piano Finnhub a pagamento — se il codice ISIN italiano non restituisce una quotazione,
+      è quasi certamente un limite del piano gratuito, non un errore della pagina.
+    </div>
+    <div class="add-row">
+      <input type="text" id="addInput" placeholder="ISIN, ticker o nome societario..." autocomplete="off" spellcheck="false">
+      <select id="addWatchlistSelect" title="Aggiungi alla watchlist"></select>
+      <button id="addBtn">Cerca e aggiungi</button>
+    </div>
+    <div class="add-status" id="addStatus"></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="watchlist-tabs" id="watchlistTabs"></div>
+    <div class="toolbar-controls">
+      <input type="text" id="filterInput" class="filter-input" placeholder="Filtra per ticker o nome…" autocomplete="off">
+      <select id="sortSelect">
+        <option value="default">Ordina: manuale</option>
+        <option value="name">Ordina: nome A-Z</option>
+        <option value="price">Ordina: prezzo</option>
+        <option value="pct-desc">Ordina: variazione % ↓</option>
+        <option value="pct-asc">Ordina: variazione % ↑</option>
+      </select>
+      <button class="refresh-btn secondary" id="exportCsvBtn">Esporta CSV</button>
+      <button class="refresh-btn secondary" id="newWatchlistBtn">+ Watchlist</button>
+    </div>
+  </div>
+
+  <div class="portfolio-summary" id="portfolioSummary" hidden></div>
+
+  <div class="grid" id="grid"></div>
+
+  <footer>
+    Prezzo aggiornato in tempo reale via WebSocket Finnhub (push ad ogni transazione, gratuito fino a 50 simboli).
+    Apertura/massimo/minimo vengono aggiornati via REST ogni 15-60 secondi a seconda del numero di titoli in lista.
+    Il flusso live funziona solo negli orari di mercato di ciascun titolo; fuori borsa il prezzo resta fermo all'ultimo
+    scambio. Non adatto a decisioni di investimento. La tua API key, le watchlist, il portfolio e gli avvisi restano
+    salvati solo su questo dispositivo/browser (localStorage).
+  </footer>
+</div>
+
+<template id="cardTemplate">
+  <div class="card">
+    <div class="card-top">
+      <div>
+        <div class="ticker"></div>
+        <div class="company"></div>
+      </div>
+      <div class="card-actions">
+        <span class="exch"></span>
+        <button class="icon-btn alert-toggle" title="Imposta avviso">🔔</button>
+        <button class="icon-btn refresh-one" title="Aggiorna">⟳</button>
+        <button class="icon-btn remove-one" title="Rimuovi">×</button>
+      </div>
+    </div>
+    <div class="price-row">
+      <div class="price">—</div>
+      <div class="delta">—</div>
+    </div>
+    <svg class="sparkline" viewBox="0 0 260 40" preserveAspectRatio="none"><polyline points=""></polyline></svg>
+    <div class="meta">
+      <div>Apertura<b class="m-open">—</b></div>
+      <div>Massimo<b class="m-high">—</b></div>
+      <div>Minimo<b class="m-low">—</b></div>
+    </div>
+    <div class="alert-box">
+      <div class="alert-row">
+        <label>Sopra <input type="number" class="alert-above" step="0.01" placeholder="—"></label>
+        <label>Sotto <input type="number" class="alert-below" step="0.01" placeholder="—"></label>
+        <button class="alert-save">Salva avviso</button>
+      </div>
+      <div class="alert-status"></div>
+    </div>
+    <div class="portfolio-box">
+      <div class="portfolio-row">
+        <label>Quantità <input type="number" class="pf-qty" step="any" placeholder="0"></label>
+        <label>Prezzo medio <input type="number" class="pf-cost" step="any" placeholder="0.00"></label>
+      </div>
+      <div class="pf-result">—</div>
+    </div>
+    <div class="updated">In attesa di dati…</div>
+  </div>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>
