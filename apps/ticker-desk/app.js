@@ -16,7 +16,15 @@ const DEFAULT_TICKERS = {
   NVDA: { name: 'NVIDIA Corporation', exch: 'NASDAQ', custom: false },
   KULR: { name: 'KULR Technology Group', exch: 'NYSE AM', custom: false },
   SPCX: { name: 'Space Exploration Technologies Corp.', exch: 'NASDAQ', custom: false },
-  NHIC: { name: 'NewHold Investment Corp III', exch: 'NASDAQ', custom: false },
+  NWCL: { name: 'newcleo plc', exch: 'NASDAQ', custom: false },
+};
+
+// Symbols that no longer trade, mapped to their successor. Applied to saved
+// watchlists/portfolio on load so existing users don't keep a dead card.
+// NHIC (NewHold Investment Corp III, a SPAC) merged with newcleo on
+// 2026-09-21; the combined company trades as NWCL from 2026-09-22.
+const TICKER_RENAMES = {
+  NHIC: 'NWCL',
 };
 
 const SPARKLINE_POINTS = 60;
@@ -81,6 +89,39 @@ function ensureDefaultWatchlist(){
     watchlists['Default'] = { ...DEFAULT_TICKERS };
   }
   if (!watchlists[activeWatchlist]) activeWatchlist = Object.keys(watchlists)[0];
+}
+
+function migrateRenamedTickers(){
+  let changed = false;
+  for (const [oldSym, newSym] of Object.entries(TICKER_RENAMES)){
+    for (const name of Object.keys(watchlists)){
+      const list = watchlists[name];
+      if (!list[oldSym]) continue;
+      // Rebuild to keep the successor in the old symbol's position.
+      const rebuilt = {};
+      for (const [sym, meta] of Object.entries(list)){
+        if (sym === oldSym){
+          if (!list[newSym]) rebuilt[newSym] = DEFAULT_TICKERS[newSym] ? { ...DEFAULT_TICKERS[newSym], custom: meta.custom } : { ...meta };
+        } else {
+          rebuilt[sym] = meta;
+        }
+      }
+      watchlists[name] = rebuilt;
+      changed = true;
+    }
+    // A position carries over (SPAC shares convert into the successor);
+    // price alerts don't, since their thresholds were set on the old price.
+    if (portfolio[oldSym]){
+      if (!portfolio[newSym]) portfolio[newSym] = portfolio[oldSym];
+      delete portfolio[oldSym];
+      saveJSON(STORAGE.portfolio, portfolio);
+    }
+    if (alerts[oldSym]){
+      delete alerts[oldSym];
+      saveJSON(STORAGE.alerts, alerts);
+    }
+  }
+  if (changed) persistWatchlists();
 }
 
 function persistWatchlists(){ saveJSON(STORAGE.watchlists, watchlists); saveJSON(STORAGE.activeWatchlist, activeWatchlist); }
@@ -800,6 +841,7 @@ function init(){
   const theme = loadJSON(STORAGE.theme, 'dark');
 
   ensureDefaultWatchlist();
+  migrateRenamedTickers();
   applyTheme(theme);
 
   renderWatchlistTabs();
